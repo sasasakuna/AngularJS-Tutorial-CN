@@ -1,4 +1,5 @@
 # Summary
 
-* [More Templating](More Templating.md)
-* [Filters](Filters.md)
+* [More Templating](v1.5.4/More Templating.md)
+* [Filters](v1.5.4/Filters.md)
+* [REST and Custom Services](v1.5.4/REST and Custom Services.md)
