@@ -55,7 +55,7 @@ npm install
 ---
 
 ### 服务
-我们创建一个服务区提供访问服务器上手机数据的方法。
+我们创建一个服务去提供访问服务器上手机数据的方法。
 `app/js/services.js`
 ```
 var phonecatServices = angular.module('phonecatServices', ['ngResource']);
@@ -83,6 +83,7 @@ angular.module('phonecatApp', ['ngRoute', 'phonecatControllers','phonecatFilters
 
 ### 控制器
 我们对一些控制器进行了重构（`PhoneListCtrl` 和`PhoneDetailCtrl`），用新的`Phone`服务替换了底层的[$http](https://docs.angularjs.org/api/ng/service/$http)服务。在和通过RESTful暴露的数据来源进行交互的时候，Angular的`$resource`服务比`$http`更加容易使用，且更容易理解。
+
 `app/js/controllers.js`.
 ```
 var phonecatControllers = angular.module('phonecatControllers', []);
@@ -104,7 +105,7 @@ phonecatControllers.controller('PhoneDetailCtrl', ['$scope', '$routeParams', 'Ph
   }
 }]);
 ```
-在`PhoneList`里，我们将：
+在`PhoneListCtrl`里，我们将：
 ```
 $http.get('phones/phones.json').success(function(data) {
   $scope.phones = data;
@@ -114,3 +115,109 @@ $http.get('phones/phones.json').success(function(data) {
 ```
 $scope.phones = Phone.query();
 ```
+
+注意，当我们触发Phone服务的query方法时，我们没有传递任何回调函数。尽管它看起来结果同步返回了，但其实并不是这样。同步返回结果是'未来'，一个对象将在XHR返回结果后填充数据。由于Angular的数据绑定，我们能使用这个特性，并且绑定到我们的模板。然后，当数据到达时，视图会自动更新。
+
+有时，依赖于将来对象，数据版本不能单独地完成我们想要的任何行为，所以在这些情况下，我们能添加一个回调去处理服务器响应。`PhoneDetailCtrl`控制器就使用了`mainImageUrl`回调。
+
+---
+
+### 测试
+
+因为我们使用了[ngResource](https://docs.angularjs.org/api/ngResource)模块，我们有必要更新Karma的配置文件。
+
+`test/karma.conf.js`:
+```
+files : [
+  'app/bower_components/angular/angular.js',
+  'app/bower_components/angular-route/angular-route.js',
+  'app/bower_components/angular-resource/angular-resource.js',
+  'app/bower_components/angular-mocks/angular-mocks.js',
+  'app/js/**/*.js',
+  'test/unit/**/*.js'
+],
+```
+我们修改了单元测试去验证新加的服务使用了HTTP服务且按希望的处理它们。该测试也检测我们的控制器是否和服务正确的交互。
+
+如果我们使用标准的`toEqual`方法，我们的测试会因为值和响应不匹配而失败。为了解决这个问题，我们使用了一个新定义的`toEqualData`方法[Jasmin matcher](http://jasmine.github.io/1.3/introduction.html#section-Matchers)。当`toEqualData`匹配两个对象时，它只会比较对象里的属性忽略里面的方法。
+
+`test/unit/controllersSpec`:
+```
+describe('PhoneCat controllers', function() {
+
+  beforeEach(function(){
+    this.addMatchers({
+      toEqualData: function(expected) {
+        return angular.equals(this.actual, expected);
+      }
+    });
+  });
+
+  beforeEach(module('phonecatApp'));
+  beforeEach(module('phonecatServices'));
+
+
+  describe('PhoneListCtrl', function(){
+    var scope, ctrl, $httpBackend;
+
+    beforeEach(inject(function(_$httpBackend_, $rootScope, $controller) {
+      $httpBackend = _$httpBackend_;
+      $httpBackend.expectGET('phones/phones.json').
+          respond([{name: 'Nexus S'}, {name: 'Motorola DROID'}]);
+
+      scope = $rootScope.$new();
+      ctrl = $controller('PhoneListCtrl', {$scope: scope});
+    }));
+
+
+    it('should create "phones" model with 2 phones fetched from xhr', function() {
+      expect(scope.phones).toEqualData([]);
+      $httpBackend.flush();
+
+      expect(scope.phones).toEqualData(
+          [{name: 'Nexus S'}, {name: 'Motorola DROID'}]);
+    });
+
+
+    it('should set the default value of orderProp model', function() {
+      expect(scope.orderProp).toBe('age');
+    });
+  });
+
+
+  describe('PhoneDetailCtrl', function(){
+    var scope, $httpBackend, ctrl,
+        xyzPhoneData = function() {
+          return {
+            name: 'phone xyz',
+            images: ['image/url1.png', 'image/url2.png']
+          }
+        };
+
+
+    beforeEach(inject(function(_$httpBackend_, $rootScope, $routeParams, $controller) {
+      $httpBackend = _$httpBackend_;
+      $httpBackend.expectGET('phones/xyz.json').respond(xyzPhoneData());
+
+      $routeParams.phoneId = 'xyz';
+      scope = $rootScope.$new();
+      ctrl = $controller('PhoneDetailCtrl', {$scope: scope});
+    }));
+
+
+    it('should fetch phone detail', function() {
+      expect(scope.phone).toEqualData({});
+      $httpBackend.flush();
+
+      expect(scope.phone).toEqualData(xyzPhoneData());
+    });
+  });
+});
+```
+你应该能看到如下输出：
+```
+Chrome 22.0: Executed 5 of 5 SUCCESS (0.038 secs / 0.01 secs)
+```
+
+### 总结
+现在我们知道了如何构建一个自定义的RESTful服务，我们可以到下一步去学习如何通过动画改进我们的应用。
